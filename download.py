@@ -3,11 +3,13 @@ import api
 import urllib
 import urllib3
 import os
+import ConfigParser
 
-# Edit this for Auto-login
-# USERNAME = ""
-# PASSWORD = ""
 AUTO_DELETE = False
+
+stv_sync_list = {}
+stv_skip_list = {}
+user_list = {}
 
 
 def select_show():
@@ -88,6 +90,13 @@ def download_episode(show, episode):
 
     if not os.path.exists(file_name):
       url = simple.retrieve_episode_mp4(group_id, instance_id, item_id, quality)
+      if not url:
+          print "Unable to retrieve URL for " \
+                + show['name'] + " " \
+                + episode['season'] + " " \
+                + episode['episode'] + \
+                ". Skipping..."
+          return
       print "Downloading " + file_name
       (filename, headers) = urllib.urlretrieve(url, file_name)
       file_size = os.path.getsize(file_name) >> 20
@@ -108,7 +117,6 @@ def download_episode(show, episode):
       print "File already exists, skipping..."
 
 
-
 def download_all_shows(shows):
     for val, show in enumerate(shows):
         show = shows[val]
@@ -122,14 +130,55 @@ def download_all_shows(shows):
                 episode = episodes[x]
                 download_episode(show, episode)
 
-if __name__ == "__main__":
-    username = USERNAME if 'USERNAME' in locals() else raw_input("Enter email: ")
-    password = PASSWORD if 'PASSWORD' in locals() else getpass.getpass("Enter password: ")
-    print "Logging in...\n"
-    print "Auto Delete set to {}, this can be changed in the settings section of download.py".format(str(AUTO_DELETE))
-    print "-" * 25
-    simple = api.SimpleTV(username, password)
+def parse_config_file(configFile):
+    config = ConfigParser.ConfigParser()
+    config.read(configFile)
+    
+    sections = {}
 
-    # Loop back to main menu
-    #while True:
-    select_show()
+    # Parse out the config info from the config file
+    for section_name in config.sections():
+    	  sections[section_name] = {}
+    	  for name, value in config.items(section_name):
+    	  	  sections[section_name][name] = value
+
+    # Process the parent section - which DVRs to SYNC or SKIP    
+    if 'STVAPI' in sections.keys():
+
+    	  #Build up info on each STV to process
+    	  dvr_list = sections['STVAPI']['dvr2sync'].split(',')
+    	  for n in range(0,len(dvr_list)):
+    	      if dvr_list[n] in sections.keys():
+    	          stv_sync_list[dvr_list[n]] = {}
+    	          if sections[dvr_list[n]]['dvrlogin'] in sections.keys():
+    	          	  stv_sync_list[dvr_list[n]]['user'] = sections[sections[dvr_list[n]]['dvrlogin']]['username']
+    	          	  stv_sync_list[dvr_list[n]]['pass'] = sections[sections[dvr_list[n]]['dvrlogin']]['password']
+
+    	  #Do the same for the DVRs to skip
+    	  dvr_list = sections['STVAPI']['dvr2skip'].split(',')
+    	  for n in range(0,len(dvr_list)):
+    	      if dvr_list[n] in sections.keys():
+    	          stv_skip_list[dvr_list[n]] = {}
+    	          if sections[dvr_list[n]]['dvrlogin'] in sections.keys():
+    	          	  stv_skip_list[dvr_list[n]]['user'] = sections[sections[dvr_list[n]]['dvrlogin']]['username']
+    	          	  stv_skip_list[dvr_list[n]]['pass'] = sections[sections[dvr_list[n]]['dvrlogin']]['password']
+    	          	  
+    print 'Processing the following STVs'
+    for n in stv_sync_list.keys():
+        print n + ":" + stv_sync_list[n]['user'] + ":" + stv_sync_list[n]['pass']
+    	
+    print 'Skipping the following STVs'
+    for n in stv_skip_list.keys():
+        print n + ":" + stv_skip_list[n]['user'] + ":" + stv_skip_list[n]['pass']
+
+
+if __name__ == "__main__":
+    parse_config_file('stv-api.ini')
+
+    # Loop through each DVR to process
+    for stv in stv_sync_list.keys():
+    	  print "Logging in to " + stv + "...."
+    	  simple = api.SimpleTV(stv_sync_list[stv]['user'],stv_sync_list[stv]['pass'],stv)
+    	  select_show();
+    	  del simple
+    	  
